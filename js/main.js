@@ -1034,18 +1034,47 @@
       const g = (await res.json()).results?.[0];
       if (!g) { $('#cond').textContent = `Couldn't find "${name}"`; return; }
       override = null;
+      userPicked = true;
       loadWeather(g.latitude, g.longitude, g.country_code ? `${g.name}, ${g.country_code}` : g.name);
     } catch {
       $('#cond').textContent = 'Search failed, try again';
     }
   }
 
-  function loadCity(c) { override = null; loadWeather(c[1], c[2], `${c[0]}, ${c[3]}`); }
+  function loadCity(c) { userPicked = true; override = null; loadWeather(c[1], c[2], `${c[0]}, ${c[3]}`); }
+
+  // Approximate location from the visitor's internet connection. Needs no
+  // permission prompt, so the page shows local weather right away.
+  let preciseFound = false, userPicked = false;
+  async function ipLocate() {
+    const sources = [
+      async () => {
+        const j = await (await fetch('https://get.geojs.io/v1/ip/geo.json')).json();
+        return { lat: +j.latitude, lon: +j.longitude, city: j.city, cc: j.country_code };
+      },
+      async () => {
+        const j = await (await fetch('https://ipwho.is/')).json();
+        if (j.success === false) throw new Error('lookup failed');
+        return { lat: +j.latitude, lon: +j.longitude, city: j.city, cc: j.country_code };
+      },
+    ];
+    for (const src of sources) {
+      try {
+        const g = await src();
+        if (!Number.isFinite(g.lat) || !Number.isFinite(g.lon)) continue;
+        if (preciseFound || userPicked) return true; // something better already loaded
+        const name = g.city ? (g.cc ? `${g.city}, ${g.cc}` : g.city) : 'Near you';
+        loadWeather(g.lat, g.lon, name);
+        return true;
+      } catch { /* try the next source */ }
+    }
+    return false;
+  }
 
   function locate(onFail) {
     if (!navigator.geolocation) { onFail?.(); return; }
-    $('#place').textContent = 'Finding you...';
     navigator.geolocation.getCurrentPosition(async pos => {
+      preciseFound = true;
       const { latitude: la, longitude: lo } = pos.coords;
       let name = 'Your location';
       try {
@@ -1054,6 +1083,7 @@
         const city = j.city || j.locality;
         if (city) name = j.countryCode ? `${city}, ${j.countryCode}` : city;
       } catch { /* keep generic name */ }
+      if (userPicked) return; // don't replace a city the visitor chose meanwhile
       override = null;
       loadWeather(la, lo, name);
     }, () => onFail?.(), { timeout: 8000, maximumAge: 600000 });
@@ -1073,7 +1103,11 @@
     const v = $('#city').value.trim();
     if (v) { searchCity(v); $('#city').blur(); }
   });
-  $('#locate').addEventListener('click', () => locate(() => { $('#cond').textContent = 'Location is blocked or unavailable'; }));
+  $('#locate').addEventListener('click', () => {
+    userPicked = false;
+    $('#cond').textContent = 'Finding you...';
+    locate(() => { $('#cond').textContent = 'Location is blocked. Check your browser settings.'; });
+  });
   for (const b of document.querySelectorAll('#modes button')) {
     b.addEventListener('click', () => {
       override = b.dataset.mode === 'live' ? null : b.dataset.mode;
@@ -1089,7 +1123,14 @@
   resize();
   initCritters();
   applyView();
-  locate(() => loadCity(pick(CITIES)));
+  // Show approximate local weather immediately, then upgrade to the exact
+  // location if the visitor allows it. A random city is the last resort.
+  ipLocate().then(ok => { 
+    if (ok || preciseFound || userPicked) return;
+    const c = pick(CITIES);
+    loadWeather(c[1], c[2], `${c[0]}, ${c[3]}`);
+  });
+  locate();
   setInterval(() => { if (live.lat != null) loadWeather(live.lat, live.lon, live.place); }, 10 * 60 * 1000);
 
   let last = performance.now();

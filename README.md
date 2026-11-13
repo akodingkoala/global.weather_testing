@@ -8,6 +8,7 @@ lives on the screen.
 
 - **Live weather** from [Open-Meteo](https://open-meteo.com/) (free, no API key):
   sun, clouds, rain, thunderstorms, snow and fog, by day or night.
+- **Finds you automatically**: approximate location from your connection right away (no prompt), upgraded to your exact location if you allow it.
 - **Search any city**, or tap one of the quick global cities.
 - **Preview buttons** to try every weather type and day/night.
 - **Pixel critters** drawn in code from tiny pixel grids: a frog, a cat, a snail,
